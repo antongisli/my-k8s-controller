@@ -18,23 +18,27 @@ import (
 )
 
 func main() {
-    var kubeconfig *string
-    if home := homedir.HomeDir(); home != "" {
-        kubeconfig = flag.String("kubeconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
-    } else {
-        kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
-    }
-    flag.Parse()
+    // Define a flag for the kubeconfig path
+    var kubeconfig string
+    flag.StringVar(&kubeconfig, "kubeconfig", filepath.Join(homedir.HomeDir(), ".kube", "config"), "Path to a kubeconfig file")
+    flag.Parse() // Parse all flags
 
     var config *rest.Config
     var err error
-    if *kubeconfig == "" {
+
+    // Decide whether to use in-cluster config or kubeconfig based on the existence of the file at kubeconfig path
+    if _, err := os.Stat(kubeconfig); os.IsNotExist(err) {
+        fmt.Println("Using in-cluster config")
         config, err = rest.InClusterConfig()
+        if err != nil {
+            panic(err.Error())
+        }
     } else {
-        config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
-    }
-    if err != nil {
-        panic(err.Error())
+        fmt.Println("Using kubeconfig file:", kubeconfig)
+        config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+        if err != nil {
+            panic(err.Error())
+        }
     }
 
     clientset, err := kubernetes.NewForConfig(config)
