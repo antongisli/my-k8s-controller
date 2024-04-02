@@ -3,7 +3,9 @@ package main
 import (
     "flag"
     "fmt"
-    "time"
+    "os"
+    "os/signal"
+    "syscall"
     
     "k8s.io/apimachinery/pkg/fields"
     "k8s.io/client-go/kubernetes"
@@ -40,16 +42,25 @@ func main() {
         panic(err.Error())
     }
 
-    watchlist := cache.NewListWatchFromClient(clientset.CoreV1().RESTClient(), "pods", "", fields.Everything())
+    // Setting up signal handling
+    stopCh := make(chan struct{})
+    sigs := make(chan os.Signal, 1)
+    signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+    watchlist := cache.NewListWatchFromClient(clientset.CoreV1().RESTClient(), "pods", corev1.NamespaceAll, fields.Everything())
     _, controller := cache.NewInformer(watchlist, &corev1.Pod{}, 0, cache.ResourceEventHandlerFuncs{
         AddFunc: func(obj interface{}) {
-            fmt.Printf("Pod added: %s \n", obj.(*corev1.Pod).Name)
+            pod := obj.(*corev1.Pod)
+            fmt.Printf("Pod added: %s \n", pod.Name)
         },
     })
 
-    stop := make(chan struct{})
-    go controller.Run(stop)
-    time.Sleep(10 * time.Minute) // Run for 10 minutes then stop
-    close(stop)
+    go func() {
+        <-sigs
+        fmt.Println("Received termination signal, shutting down...")
+        close(stopCh)
+    }()
+
+    controller.Run(stopCh)
 }
 
